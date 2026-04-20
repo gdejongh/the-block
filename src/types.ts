@@ -23,11 +23,11 @@ export interface Vehicle {
   city: string;
   auction_start: string;
   starting_bid: number;
-  reserve_price: number;
+  reserve_price: number | null;
   buy_now_price: number | null;
   images: string[];
   selling_dealership: string;
   lot: string;
-  current_bid: number;
+  current_bid: number | null;
   bid_count: number;
 }

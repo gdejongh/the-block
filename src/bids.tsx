@@ -158,7 +158,7 @@ export function getEffectiveBid(
 ): EffectiveBid {
   const myBids = userBids.filter((b) => b.vehicleId === vehicle.id);
   const myHighest = myBids.reduce((max, b) => Math.max(max, b.amount), 0);
-  const currentBid = Math.max(vehicle.current_bid, myHighest);
+  const currentBid = Math.max(vehicle.current_bid ?? 0, myHighest);
   const bidCount = vehicle.bid_count + myBids.length;
   const minNextBid =
     currentBid > 0
