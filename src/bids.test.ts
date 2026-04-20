@@ -132,4 +132,11 @@ describe("getEffectiveBid", () => {
     expect(result.currentBid).toBe(0);
     expect(result.minNextBid).toBe(15000);
   });
+
+  it("marks the user top bidder when their bid exactly matches the seed", () => {
+    const v = makeVehicle({ current_bid: 22000, bid_count: 3 });
+    const result = getEffectiveBid(v, [makeBid({ amount: 22000 })]);
+    expect(result.currentBid).toBe(22000);
+    expect(result.isTopBidder).toBe(true);
+  });
 });

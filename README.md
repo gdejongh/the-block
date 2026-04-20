@@ -76,7 +76,7 @@ Deliberately not built, to keep scope tight within the time budget:
 ## Testing
 
 - `npm run typecheck` passes with strict TypeScript settings.
-- `npm test` runs Vitest coverage for `getEffectiveBid` (seed-only, user-above-seed, below-seed, multi-bid ordering, buy-now terminal state, cross-vehicle isolation, max-bid map, null `current_bid`).
+- `npm test` runs Vitest against the pure logic that governs the bid and countdown UX: `getEffectiveBid` (seed-only, user-above/at/below-seed, multi-bid ordering, buy-now terminal state, cross-vehicle isolation, max-bid map, null `current_bid`), `getAuctionTimes` (upcoming/live/ended transitions at exact boundaries, `msUntilStart`/`msUntilEnd` signs), and `formatDuration` (s / m s / h m / d h branches, negative clamp).
 - Responsive layout verified with headless Chromium screenshots at 375×667 (mobile), 768×1024 (tablet), and 1280×800 (desktop). The `playwright` devDep was used as an inspection tool during development - it isn't wired into CI and can be removed without affecting the app.
 - Manually exercised the bid flow: valid bids, below-minimum rejection, non-numeric input, max-bid ceiling, buy-now terminal state, reload persistence, and effective state propagating back from the detail page to the list cards and my-bids rollup.
 
