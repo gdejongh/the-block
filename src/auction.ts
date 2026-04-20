@@ -7,7 +7,7 @@ export const AUCTION_DURATION_MS = 48 * 60 * 60 * 1000;
 // The dataset's auction_start values are synthetic fixed timestamps. The
 // challenge prompt explicitly allows normalizing them relative to "now" for
 // the prototype. We shift every auction by the same delta so the dataset's
-// median start time lands at the moment the page loaded — that guarantees a
+// median start time lands at the moment the page loaded - that guarantees a
 // spread of upcoming / live / ended auctions for any reviewer cloning this
 // repo at any point in time.
 const SHIFT_MS = (() => {

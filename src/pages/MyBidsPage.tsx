@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { getAuctionTimes, useNow } from "../auction";
 import { getEffectiveBid, useBids, type MaxBidMap, type UserBid } from "../bids";
 import { getVehicleById } from "../data";
-import { currencyFmt } from "../format";
+import { currencyFmt, onImageError } from "../format";
 import type { Vehicle } from "../types";
 
 interface Entry {
@@ -36,7 +36,7 @@ export default function MyBidsPage() {
   const now = useNow(1000);
 
   useEffect(() => {
-    document.title = "My bids — The Block";
+    document.title = "My bids - The Block";
   }, []);
 
   return (
@@ -163,6 +163,7 @@ function BidRow({
         <img
           src={vehicle.images[0]}
           alt=""
+          onError={onImageError}
           className="hidden h-16 w-24 shrink-0 rounded-md border border-slate-200 bg-slate-100 object-cover sm:block"
         />
         <div className="min-w-0 flex-1">

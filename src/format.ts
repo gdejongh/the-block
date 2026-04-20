@@ -35,3 +35,15 @@ export function colorFamily(name: string): string {
   }
   return "Other";
 }
+
+export const PHOTO_PLACEHOLDER =
+  "data:image/svg+xml;utf8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"><rect width="800" height="600" fill="#e2e8f0"/><text x="400" y="300" font-family="system-ui,sans-serif" font-size="28" fill="#64748b" text-anchor="middle" dominant-baseline="middle">Photo unavailable</text></svg>',
+  );
+
+export function onImageError(e: { currentTarget: HTMLImageElement }): void {
+  const img = e.currentTarget;
+  if (img.src.startsWith("data:")) return;
+  img.src = PHOTO_PLACEHOLDER;
+}

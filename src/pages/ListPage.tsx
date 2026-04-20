@@ -8,7 +8,7 @@ import {
 } from "../auction";
 import { useBids, getEffectiveBid, type UserBid } from "../bids";
 import { vehicles } from "../data";
-import { colorFamily, colorSwatch, currencyFmt, kmFmt } from "../format";
+import { colorFamily, colorSwatch, currencyFmt, kmFmt, onImageError } from "../format";
 import type { Vehicle } from "../types";
 
 const SORT_OPTIONS = [
@@ -223,7 +223,7 @@ export default function ListPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
-    document.title = "The Block — Vehicle Auctions";
+    document.title = "The Block - Vehicle Auctions";
   }, []);
 
   const makeOptions = useMemo(
@@ -453,6 +453,7 @@ export default function ListPage() {
                         src={v.images[0]}
                         alt=""
                         loading="lazy"
+                        onError={onImageError}
                         className="aspect-[4/3] w-full object-cover"
                       />
                     </div>

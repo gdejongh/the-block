@@ -8,7 +8,7 @@ import {
 } from "../auction";
 import { getEffectiveBid, MIN_BID_INCREMENT, useBids } from "../bids";
 import { getVehicleById } from "../data";
-import { currencyFmt, kmFmt } from "../format";
+import { currencyFmt, kmFmt, onImageError } from "../format";
 import type { Vehicle } from "../types";
 
 export default function DetailPage() {
@@ -17,8 +17,8 @@ export default function DetailPage() {
 
   useEffect(() => {
     document.title = vehicle
-      ? `${vehicle.year} ${vehicle.make} ${vehicle.model} — The Block`
-      : "Vehicle not found — The Block";
+      ? `${vehicle.year} ${vehicle.make} ${vehicle.model} - The Block`
+      : "Vehicle not found - The Block";
   }, [vehicle]);
 
   if (!vehicle) {
@@ -106,6 +106,7 @@ function Gallery({ images, alt }: { images: string[]; alt: string }) {
       <img
         src={active}
         alt={alt}
+        onError={onImageError}
         className="aspect-[4/3] w-full rounded-lg border border-slate-200 bg-slate-100 object-cover"
       />
       {images.length > 1 && (
@@ -129,6 +130,7 @@ function Gallery({ images, alt }: { images: string[]; alt: string }) {
                 <img
                   src={src}
                   alt={`${alt} thumbnail ${i + 1}`}
+                  onError={onImageError}
                   className="aspect-[4/3] w-full object-cover"
                 />
               </button>
@@ -218,6 +220,17 @@ function AuctionPanel({ vehicle }: { vehicle: Vehicle }) {
   const [mode, setMode] = useState<BidMode>("bid");
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [confirmingBuyNow, setConfirmingBuyNow] = useState(false);
+
+  useEffect(() => {
+    if (!confirmingBuyNow) return;
+    const id = setTimeout(() => setConfirmingBuyNow(false), 3000);
+    return () => clearTimeout(id);
+  }, [confirmingBuyNow]);
+
+  useEffect(() => {
+    if (!canBuyNow) setConfirmingBuyNow(false);
+  }, [canBuyNow]);
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -245,11 +258,12 @@ function AuctionPanel({ vehicle }: { vehicle: Vehicle }) {
 
   function onBuyNow() {
     if (!canBuyNow || vehicle.buy_now_price == null) return;
-    const ok = window.confirm(
-      `Buy now for ${currencyFmt.format(vehicle.buy_now_price)}? This ends the auction for you.`,
-    );
-    if (!ok) return;
+    if (!confirmingBuyNow) {
+      setConfirmingBuyNow(true);
+      return;
+    }
     buyNow(vehicle.id, vehicle.buy_now_price);
+    setConfirmingBuyNow(false);
     setDraft("");
     setError(null);
   }
@@ -307,16 +321,10 @@ function AuctionPanel({ vehicle }: { vehicle: Vehicle }) {
         </div>
       ) : (
         <form onSubmit={onSubmit} className="mt-4">
-          <div
-            role="tablist"
-            aria-label="Bid mode"
-            className="mb-2 inline-flex rounded-md border border-slate-200 bg-slate-50 p-0.5 text-xs font-medium"
-          >
+          <div className="mb-2 inline-flex rounded-md border border-slate-200 bg-slate-50 p-0.5 text-xs font-medium">
             {(["bid", "max"] as const).map((m) => (
               <button
                 key={m}
-                role="tab"
-                aria-selected={mode === m}
                 type="button"
                 onClick={() => {
                   setMode(m);
@@ -373,9 +381,16 @@ function AuctionPanel({ vehicle }: { vehicle: Vehicle }) {
             <button
               type="button"
               onClick={onBuyNow}
-              className="mt-2 w-full rounded-md border border-emerald-600 bg-white px-4 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-50"
+              className={
+                "mt-2 w-full rounded-md border px-4 py-2 text-sm font-medium transition " +
+                (confirmingBuyNow
+                  ? "border-emerald-700 bg-emerald-600 text-white hover:bg-emerald-700"
+                  : "border-emerald-600 bg-white text-emerald-700 hover:bg-emerald-50")
+              }
             >
-              Buy now for {currencyFmt.format(vehicle.buy_now_price)}
+              {confirmingBuyNow
+                ? `Click to confirm - ${currencyFmt.format(vehicle.buy_now_price)}`
+                : `Buy now for ${currencyFmt.format(vehicle.buy_now_price)}`}
             </button>
           )}
           {!canBid && (

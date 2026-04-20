@@ -73,7 +73,7 @@ export function BidsProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.setItem(BIDS_KEY, JSON.stringify(userBids));
     } catch {
-      // quota exceeded, private mode, etc. — safe to ignore for a prototype
+      // quota exceeded, private mode, etc. - safe to ignore for a prototype
     }
   }, [userBids]);
 
