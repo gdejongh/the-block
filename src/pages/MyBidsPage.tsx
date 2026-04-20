@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
+import { getAuctionTimes, useNow } from "../auction";
 import { getEffectiveBid, useBids, type MaxBidMap, type UserBid } from "../bids";
 import { getVehicleById } from "../data";
 import { currencyFmt } from "../format";
@@ -32,6 +33,7 @@ function groupByVehicle(userBids: UserBid[]): Entry[] {
 export default function MyBidsPage() {
   const { userBids, userMaxBids } = useBids();
   const entries = groupByVehicle(userBids);
+  const now = useNow(1000);
 
   useEffect(() => {
     document.title = "My bids — The Block";
@@ -69,6 +71,7 @@ export default function MyBidsPage() {
                 entry={entry}
                 allBids={userBids}
                 allMaxBids={userMaxBids}
+                now={now}
               />
             ))}
           </ul>
@@ -78,23 +81,78 @@ export default function MyBidsPage() {
   );
 }
 
+type Outcome =
+  | { kind: "bought" }
+  | { kind: "won" }
+  | { kind: "lost" }
+  | { kind: "leading" }
+  | { kind: "outbid" };
+
+function resolveOutcome(
+  state: "upcoming" | "live" | "ended",
+  wonByBuyNow: boolean,
+  isTopBidder: boolean,
+): Outcome {
+  if (wonByBuyNow) return { kind: "bought" };
+  if (state === "ended") return isTopBidder ? { kind: "won" } : { kind: "lost" };
+  return isTopBidder ? { kind: "leading" } : { kind: "outbid" };
+}
+
+function OutcomeBadge({ outcome }: { outcome: Outcome }) {
+  const styles: Record<Outcome["kind"], { className: string; label: string }> = {
+    bought: {
+      className: "bg-emerald-100 text-emerald-800",
+      label: "Bought",
+    },
+    won: {
+      className: "bg-emerald-100 text-emerald-800",
+      label: "Won",
+    },
+    leading: {
+      className: "bg-emerald-50 text-emerald-700",
+      label: "High bidder",
+    },
+    outbid: {
+      className: "bg-amber-50 text-amber-700",
+      label: "Outbid",
+    },
+    lost: {
+      className: "bg-slate-100 text-slate-600",
+      label: "Auction ended",
+    },
+  };
+  const { className, label } = styles[outcome.kind];
+  return (
+    <span
+      className={
+        "ml-auto rounded-full px-2 py-0.5 text-xs font-medium " + className
+      }
+    >
+      {label}
+    </span>
+  );
+}
+
 function BidRow({
   entry,
   allBids,
   allMaxBids,
+  now,
 }: {
   entry: Entry;
   allBids: UserBid[];
   allMaxBids: MaxBidMap;
+  now: number;
 }) {
   const { vehicle, myBids, latest } = entry;
-  const { currentBid, bidCount, wonByBuyNow, maxBid } = getEffectiveBid(
+  const { bidCount, wonByBuyNow, maxBid, isTopBidder } = getEffectiveBid(
     vehicle,
     allBids,
     allMaxBids,
   );
   const myHighest = myBids.reduce((max, b) => Math.max(max, b.amount), 0);
-  const isTopBid = currentBid === myHighest;
+  const { state } = getAuctionTimes(vehicle, now);
+  const outcome = resolveOutcome(state, wonByBuyNow, isTopBidder);
 
   return (
     <li>
@@ -143,17 +201,7 @@ function BidRow({
                 </span>
               </>
             )}
-            {wonByBuyNow ? (
-              <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-                Bought
-              </span>
-            ) : (
-              isTopBid && (
-                <span className="ml-auto rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                  High bidder
-                </span>
-              )
-            )}
+            <OutcomeBadge outcome={outcome} />
           </div>
         </div>
         <span aria-hidden className="hidden text-slate-400 sm:block">
