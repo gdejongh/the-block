@@ -4,9 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-This is **the starting point for an OPENLANE coding challenge**, not a running application. The candidate forks this repo and builds the **buyer side of a vehicle auction web app** on top of it. At `main`, the repo contains only: the challenge prompt (`README.md`), a submission template (`SUBMISSION.md`), walkthrough expectations (`WALKTHROUGH.md`), the vehicle dataset, and the script that generated it. There is no application code, build system, package manager, or test suite yet — those are introduced by the candidate's implementation.
+A submission for OPENLANE's *The Block* coding challenge — a React + Vite prototype of the **buyer side of a vehicle auction web app**. The original challenge prompt lives in [`CHALLENGE.md`](CHALLENGE.md); the submission README at the repo root replaces it.
 
-When the user asks you to "start the project" or "build the feature," the expectation is that you are scaffolding fresh inside this repo (or a subdirectory of it), not modifying an existing app.
+Key application files:
+
+- `src/App.tsx` — `BidsProvider` wrapping a `BrowserRouter` with four routes (`/`, `/vehicles/:id`, `/my-bids`, `*`)
+- `src/pages/ListPage.tsx` — inventory grid with URL-synced search (`?q=…`) and sort (`?sort=…`)
+- `src/pages/DetailPage.tsx` — vehicle gallery, specs, condition, and the auction panel; grid reorder places the bid form directly after the title on mobile and as a sticky right-column sidebar on `lg+`
+- `src/pages/MyBidsPage.tsx` — per-vehicle rollup of every bid the user has placed, read from the same context
+- `src/bids.tsx` — React Context for user bids, `localStorage` persistence under `the-block:bids`, and the pure `getEffectiveBid()` helper that layers user bids over the JSON baseline. This helper is called from the list card, detail panel, and my-bids rows — keep them in sync via this function rather than duplicating merge logic.
+- `src/auction.ts` — auction state machine (`upcoming`/`live`/`ended`), countdown formatting, and the `useNow` ticker. Applies a single median-based `SHIFT_MS` to every `auction_start` so the synthetic timestamps always span around "now" at page load.
+- `src/data.ts` — typed wrapper around `data/vehicles.json` with an O(1) `getVehicleById` map lookup
+- `src/format.ts` — shared `Intl` formatters
 
 ## Challenge constraints that shape implementation choices
 
@@ -37,4 +46,16 @@ The candidate's README should follow `SUBMISSION.md` (how to run, time spent, as
 
 ## Commands
 
-No build/test/lint commands exist yet — they will be defined by whatever stack the candidate chooses. When a `package.json` (or equivalent) is added, update this section with the real commands rather than guessing.
+- `npm run dev` — Vite dev server at <http://localhost:5173>
+- `npm run build` — TS project build + Vite production build to `dist/`
+- `npm run typecheck` — TypeScript-only check, no emit
+- `npm run preview` — serve the production build
+
+No test runner is wired up. `playwright` is installed as a devDep and was used for manual screenshot-based responsive QA during development; it isn't invoked by any script. If you add tests, prefer Vitest for unit coverage over spinning up Playwright for everything — the logic worth testing first is `getEffectiveBid` in `src/bids.tsx`.
+
+## Behaviors worth knowing before editing
+
+- **Bid state is derived, not stored.** Never write through to a "current_bid" on the vehicle record. The single source of truth is the JSON seed + `userBids` array; `getEffectiveBid` combines them. If a view needs the effective value, call the helper.
+- **Auction timestamps are synthetic and normalized at runtime.** Raw `auction_start` values come through `getAuctionTimes` in `src/auction.ts`, which adds a single module-level `SHIFT_MS` (computed from the dataset median at load) to every vehicle. Never read `auction_start` directly in UI code — always go through `getAuctionTimes` so state and countdowns stay consistent. The bid form on the detail page is disabled when `state !== "live"`.
+- **Search is URL-first.** `ListPage` reads `q` from `useSearchParams`; the input is a controlled reflection of the URL. Update via `setSearchParams(..., { replace: true })` so typing doesn't flood history.
+- **Detail grid is order-sensitive on mobile.** The three grid children are Gallery+Title / AuctionPanel / Specs+Condition, in that DOM order, with `lg:col-start`/`lg:row-start` classes rearranging them into a 2-col + sidebar layout on desktop. Don't reorder the JSX to match desktop — it'd break mobile UX (bid form would get buried again).
