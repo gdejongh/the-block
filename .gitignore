@@ -6,3 +6,5 @@ dist/
 *.log
 *.bak
 *.tsbuildinfo
+.claude/
+CLAUDE.md
