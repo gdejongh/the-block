@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   formatDuration,
@@ -14,6 +14,12 @@ import type { Vehicle } from "../types";
 export default function DetailPage() {
   const { id } = useParams<{ id: string }>();
   const vehicle = id ? getVehicleById(id) : undefined;
+
+  useEffect(() => {
+    document.title = vehicle
+      ? `${vehicle.year} ${vehicle.make} ${vehicle.model} — The Block`
+      : "Vehicle not found — The Block";
+  }, [vehicle]);
 
   if (!vehicle) {
     return (
@@ -89,24 +95,41 @@ function DetailMyBidsLink() {
 }
 
 function Gallery({ images, alt }: { images: string[]; alt: string }) {
-  const [hero, ...rest] = images;
+  const [activeIndex, setActiveIndex] = useState(0);
+  const active = images[activeIndex] ?? images[0];
   return (
     <div>
       <img
-        src={hero}
+        src={active}
         alt={alt}
         className="aspect-[4/3] w-full rounded-lg border border-slate-200 bg-slate-100 object-cover"
       />
-      {rest.length > 0 && (
-        <div className="mt-2 grid grid-cols-4 gap-2">
-          {rest.slice(0, 4).map((src, i) => (
-            <img
-              key={i}
-              src={src}
-              alt={`${alt} thumbnail ${i + 2}`}
-              className="aspect-[4/3] w-full rounded-md border border-slate-200 bg-slate-100 object-cover"
-            />
-          ))}
+      {images.length > 1 && (
+        <div className="mt-2 grid grid-cols-4 gap-2 sm:grid-cols-6">
+          {images.map((src, i) => {
+            const isActive = i === activeIndex;
+            return (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setActiveIndex(i)}
+                aria-label={`Show image ${i + 1}`}
+                aria-pressed={isActive}
+                className={
+                  "overflow-hidden rounded-md border bg-slate-100 transition " +
+                  (isActive
+                    ? "border-slate-900 ring-2 ring-slate-900"
+                    : "border-slate-200 hover:border-slate-400")
+                }
+              >
+                <img
+                  src={src}
+                  alt={`${alt} thumbnail ${i + 1}`}
+                  className="aspect-[4/3] w-full object-cover"
+                />
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -177,7 +200,8 @@ function AuctionPanel({ vehicle }: { vehicle: Vehicle }) {
     maxBid,
     isTopBidder,
   } = getEffectiveBid(vehicle, userBids, userMaxBids);
-  const reserveMet = currentBid >= vehicle.reserve_price;
+  const hasReserve = vehicle.reserve_price != null;
+  const reserveMet = hasReserve && currentBid >= vehicle.reserve_price!;
   const now = useNow(1000);
   const times = getAuctionTimes(vehicle, now);
   const canBid = times.state === "live" && !wonByBuyNow;
@@ -256,10 +280,14 @@ function AuctionPanel({ vehicle }: { vehicle: Vehicle }) {
           <p
             className={
               "mt-1 text-xs font-medium " +
-              (reserveMet ? "text-emerald-700" : "text-slate-500")
+              (reserveMet || !hasReserve ? "text-emerald-700" : "text-slate-500")
             }
           >
-            {reserveMet ? "Reserve met" : "Reserve not yet met"}
+            {!hasReserve
+              ? "No reserve"
+              : reserveMet
+                ? "Reserve met"
+                : "Reserve not yet met"}
           </p>
         )}
       </div>
@@ -387,7 +415,6 @@ function AuctionPanel({ vehicle }: { vehicle: Vehicle }) {
       )}
 
       <dl className="mt-4 space-y-1 text-sm">
-        <Row label="Reserve" value={currencyFmt.format(vehicle.reserve_price)} />
         {vehicle.buy_now_price != null && (
           <Row label="Buy now" value={currencyFmt.format(vehicle.buy_now_price)} />
         )}
