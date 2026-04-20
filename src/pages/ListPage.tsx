@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   formatDuration,
@@ -8,7 +8,7 @@ import {
 } from "../auction";
 import { useBids, getEffectiveBid, type UserBid } from "../bids";
 import { vehicles } from "../data";
-import { colorSwatch, currencyFmt, kmFmt } from "../format";
+import { colorFamily, colorSwatch, currencyFmt, kmFmt } from "../format";
 import type { Vehicle } from "../types";
 
 const SORT_OPTIONS = [
@@ -47,6 +47,90 @@ function gradePillClasses(grade: number): string {
   if (grade >= 4) return "bg-emerald-50 text-emerald-700";
   if (grade >= 3) return "bg-amber-50 text-amber-700";
   return "bg-rose-50 text-rose-700";
+}
+
+const GRADE_THRESHOLDS = [
+  { value: 0, label: "Any" },
+  { value: 3, label: "3+" },
+  { value: 4, label: "4+" },
+  { value: 4.5, label: "4.5+" },
+] as const;
+
+interface Filters {
+  makes: string[];
+  bodies: string[];
+  colors: string[];
+  gradeMin: number;
+  priceMin: number;
+  priceMax: number;
+  yearMin: number;
+  yearMax: number;
+}
+
+const FILTER_KEYS = [
+  "make",
+  "body",
+  "color",
+  "grade",
+  "price_min",
+  "price_max",
+  "year_min",
+  "year_max",
+] as const;
+
+function parseFilters(sp: URLSearchParams): Filters {
+  const list = (key: string) =>
+    (sp.get(key) ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  const num = (key: string) => {
+    const v = Number(sp.get(key));
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  };
+  return {
+    makes: list("make"),
+    bodies: list("body"),
+    colors: list("color"),
+    gradeMin: num("grade"),
+    priceMin: num("price_min"),
+    priceMax: num("price_max"),
+    yearMin: num("year_min"),
+    yearMax: num("year_max"),
+  };
+}
+
+// Treats an inverted range (min > max) as if the user meant the two bounds
+// swapped. Normalizing at compare time instead of parse time keeps the input
+// values stable while the user is still typing.
+function rangePair(lo: number, hi: number): [number, number] {
+  return lo > 0 && hi > 0 && lo > hi ? [hi, lo] : [lo, hi];
+}
+
+function passesFilters(v: Vehicle, f: Filters, effectivePrice: number): boolean {
+  if (f.makes.length && !f.makes.includes(v.make)) return false;
+  if (f.bodies.length && !f.bodies.includes(v.body_style)) return false;
+  if (f.colors.length && !f.colors.includes(colorFamily(v.exterior_color)))
+    return false;
+  if (f.gradeMin > 0 && v.condition_grade < f.gradeMin) return false;
+  const [priceMin, priceMax] = rangePair(f.priceMin, f.priceMax);
+  if (priceMin > 0 && effectivePrice < priceMin) return false;
+  if (priceMax > 0 && effectivePrice > priceMax) return false;
+  const [yearMin, yearMax] = rangePair(f.yearMin, f.yearMax);
+  if (yearMin > 0 && v.year < yearMin) return false;
+  if (yearMax > 0 && v.year > yearMax) return false;
+  return true;
+}
+
+function countActiveFilters(f: Filters): number {
+  let n = 0;
+  if (f.makes.length) n++;
+  if (f.bodies.length) n++;
+  if (f.colors.length) n++;
+  if (f.gradeMin > 0) n++;
+  if (f.priceMin > 0 || f.priceMax > 0) n++;
+  if (f.yearMin > 0 || f.yearMax > 0) n++;
+  return n;
 }
 
 function haystack(v: Vehicle) {
@@ -134,9 +218,29 @@ export default function ListPage() {
   const status: StatusKey = isValidStatus(statusParam) ? statusParam : "all";
   const { userBids, userMaxBids } = useBids();
   const now = useNow(1000);
+  const filters = useMemo(() => parseFilters(searchParams), [searchParams]);
+  const activeFilterCount = countActiveFilters(filters);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     document.title = "The Block — Vehicle Auctions";
+  }, []);
+
+  const makeOptions = useMemo(
+    () => [...new Set(vehicles.map((v) => v.make))].sort(),
+    [],
+  );
+  const bodyOptions = useMemo(
+    () => [...new Set(vehicles.map((v) => v.body_style))].sort(),
+    [],
+  );
+  const colorOptions = useMemo(
+    () => [...new Set(vehicles.map((v) => colorFamily(v.exterior_color)))].sort(),
+    [],
+  );
+  const yearBounds = useMemo(() => {
+    const years = vehicles.map((v) => v.year);
+    return { min: Math.min(...years), max: Math.max(...years) };
   }, []);
 
   const searched = useMemo(() => {
@@ -144,18 +248,28 @@ export default function ListPage() {
     return vehicles.filter((v) => matchesQuery(haystack(v), q));
   }, [q]);
 
+  const customFiltered = useMemo(
+    () =>
+      searched.filter((v) =>
+        passesFilters(v, filters, displayPrice(v, userBids)),
+      ),
+    [searched, filters, userBids],
+  );
+
   const statusCounts = useMemo(() => {
-    const counts = { all: searched.length, live: 0, upcoming: 0, ended: 0 };
-    for (const v of searched) {
+    const counts = { all: customFiltered.length, live: 0, upcoming: 0, ended: 0 };
+    for (const v of customFiltered) {
       counts[getAuctionTimes(v, now).state]++;
     }
     return counts;
-  }, [searched, now]);
+  }, [customFiltered, now]);
 
   const filtered = useMemo(() => {
-    if (status === "all") return searched;
-    return searched.filter((v) => getAuctionTimes(v, now).state === status);
-  }, [searched, status, now]);
+    if (status === "all") return customFiltered;
+    return customFiltered.filter(
+      (v) => getAuctionTimes(v, now).state === status,
+    );
+  }, [customFiltered, status, now]);
 
   const sorted = useMemo(
     () => sortVehicles(filtered, sort, userBids),
@@ -171,6 +285,31 @@ export default function ListPage() {
     if (next && next !== empty) params.set(key, next);
     else params.delete(key);
     setSearchParams(params, { replace: true });
+  }
+
+  function updateParams(patch: Record<string, string | null>) {
+    const params = new URLSearchParams(searchParams);
+    for (const [k, v] of Object.entries(patch)) {
+      if (v) params.set(k, v);
+      else params.delete(k);
+    }
+    setSearchParams(params, { replace: true });
+  }
+
+  function toggleMulti(key: "make" | "body" | "color", value: string) {
+    const field =
+      key === "make" ? "makes" : key === "body" ? "bodies" : "colors";
+    const current = filters[field];
+    const next = current.includes(value)
+      ? current.filter((x) => x !== value)
+      : [...current, value];
+    updateParams({ [key]: next.length ? next.join(",") : null });
+  }
+
+  function clearAllFilters() {
+    const patch: Record<string, null> = {};
+    for (const k of FILTER_KEYS) patch[k] = null;
+    updateParams(patch);
   }
 
   return (
@@ -206,6 +345,25 @@ export default function ListPage() {
                 ))}
               </select>
             </label>
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((o) => !o)}
+              aria-expanded={filtersOpen}
+              aria-controls="filters-panel"
+              className={
+                "inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition sm:w-auto " +
+                (activeFilterCount > 0
+                  ? "border-slate-900 bg-slate-900 text-white hover:bg-slate-800"
+                  : "border-slate-300 bg-white text-slate-700 hover:border-slate-400")
+              }
+            >
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-white px-1.5 text-xs font-semibold text-slate-900">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
           </div>
         </div>
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-2 px-4 pb-3">
@@ -250,6 +408,19 @@ export default function ListPage() {
               : `${sorted.length} of ${vehicles.length} vehicles match`}
           </span>
         </div>
+        {filtersOpen && (
+          <FilterPanel
+            filters={filters}
+            makeOptions={makeOptions}
+            bodyOptions={bodyOptions}
+            colorOptions={colorOptions}
+            yearBounds={yearBounds}
+            activeCount={activeFilterCount}
+            onToggle={toggleMulti}
+            onUpdate={updateParams}
+            onClearAll={clearAllFilters}
+          />
+        )}
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6">
@@ -257,11 +428,13 @@ export default function ListPage() {
           <EmptyState
             query={q}
             status={status}
+            activeFilterCount={activeFilterCount}
             onClearQuery={() => updateParam("q", "", "")}
             onClearStatus={() => updateParam("status", "all", "all")}
+            onClearFilters={clearAllFilters}
           />
         ) : (
-          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {sorted.map((v) => {
               const { currentBid, bidCount, myLastBid, wonByBuyNow, maxBid } =
                 getEffectiveBid(v, userBids, userMaxBids);
@@ -275,6 +448,14 @@ export default function ListPage() {
                     to={`/vehicles/${v.id}`}
                     className="flex h-full flex-col rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow"
                   >
+                    <div className="-mx-4 -mt-4 mb-3 overflow-hidden rounded-t-lg bg-slate-100">
+                      <img
+                        src={v.images[0]}
+                        alt=""
+                        loading="lazy"
+                        className="aspect-[4/3] w-full object-cover"
+                      />
+                    </div>
                     <div className="flex items-baseline justify-between gap-2">
                       <h2 className="font-medium">
                         {v.year} {v.make} {v.model}
@@ -288,6 +469,7 @@ export default function ListPage() {
                           title={`Condition grade ${v.condition_grade.toFixed(1)} of 5`}
                         >
                           {v.condition_grade.toFixed(1)}
+                          <span className="opacity-60">/5</span>
                         </span>
                         <span className="text-xs text-slate-500">
                           Lot {v.lot}
@@ -309,7 +491,7 @@ export default function ListPage() {
                         {v.city}, {v.province}
                       </span>
                     </p>
-                    <div className="mt-3 flex items-baseline justify-between">
+                    <div className="mt-auto flex items-baseline justify-between border-t border-slate-100 pt-3">
                       {bidCount === 0 ? (
                         <>
                           <span className="text-lg font-semibold">
@@ -396,6 +578,234 @@ function AuctionLabel({
   return <p className="mt-2 text-xs font-medium text-slate-400">Ended</p>;
 }
 
+function FilterPanel({
+  filters,
+  makeOptions,
+  bodyOptions,
+  colorOptions,
+  yearBounds,
+  activeCount,
+  onToggle,
+  onUpdate,
+  onClearAll,
+}: {
+  filters: Filters;
+  makeOptions: string[];
+  bodyOptions: string[];
+  colorOptions: string[];
+  yearBounds: { min: number; max: number };
+  activeCount: number;
+  onToggle: (key: "make" | "body" | "color", value: string) => void;
+  onUpdate: (patch: Record<string, string | null>) => void;
+  onClearAll: () => void;
+}) {
+  return (
+    <section
+      id="filters-panel"
+      className="mx-auto max-w-6xl border-t border-slate-200 bg-slate-50 px-4 py-4"
+    >
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <FilterGroup label="Make">
+          {makeOptions.map((m) => (
+            <ChipToggle
+              key={m}
+              active={filters.makes.includes(m)}
+              onClick={() => onToggle("make", m)}
+            >
+              {m}
+            </ChipToggle>
+          ))}
+        </FilterGroup>
+
+        <FilterGroup label="Body style">
+          {bodyOptions.map((b) => (
+            <ChipToggle
+              key={b}
+              active={filters.bodies.includes(b)}
+              onClick={() => onToggle("body", b)}
+            >
+              <span className="capitalize">{b}</span>
+            </ChipToggle>
+          ))}
+        </FilterGroup>
+
+        <FilterGroup label="Color">
+          {colorOptions.map((c) => (
+            <ChipToggle
+              key={c}
+              active={filters.colors.includes(c)}
+              onClick={() => onToggle("color", c)}
+            >
+              <span
+                aria-hidden
+                className="mr-1 inline-block h-2.5 w-2.5 rounded-full border border-slate-300 align-middle"
+                style={{ backgroundColor: colorSwatch(c) }}
+              />
+              {c}
+            </ChipToggle>
+          ))}
+        </FilterGroup>
+
+        <FilterGroup label="Condition grade">
+          {GRADE_THRESHOLDS.map((g) => (
+            <ChipToggle
+              key={g.value}
+              active={filters.gradeMin === g.value}
+              onClick={() =>
+                onUpdate({ grade: g.value > 0 ? String(g.value) : null })
+              }
+            >
+              {g.label}
+            </ChipToggle>
+          ))}
+        </FilterGroup>
+
+        <FilterGroup label="Price (CAD)">
+          <RangeInputs
+            minValue={filters.priceMin}
+            maxValue={filters.priceMax}
+            minPlaceholder="Min"
+            maxPlaceholder="Max"
+            step={500}
+            onChange={(min, max) =>
+              onUpdate({
+                price_min: min > 0 ? String(min) : null,
+                price_max: max > 0 ? String(max) : null,
+              })
+            }
+          />
+        </FilterGroup>
+
+        <FilterGroup label="Year">
+          <RangeInputs
+            minValue={filters.yearMin}
+            maxValue={filters.yearMax}
+            minPlaceholder={String(yearBounds.min)}
+            maxPlaceholder={String(yearBounds.max)}
+            step={1}
+            min={yearBounds.min}
+            max={yearBounds.max}
+            onChange={(min, max) =>
+              onUpdate({
+                year_min: min > 0 ? String(min) : null,
+                year_max: max > 0 ? String(max) : null,
+              })
+            }
+          />
+        </FilterGroup>
+      </div>
+
+      {activeCount > 0 && (
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            onClick={onClearAll}
+            className="text-xs font-medium text-blue-600 hover:underline"
+          >
+            Clear all filters
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function FilterGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {label}
+      </p>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
+    </div>
+  );
+}
+
+function ChipToggle({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={
+        "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium transition " +
+        (active
+          ? "border-slate-900 bg-slate-900 text-white"
+          : "border-slate-300 bg-white text-slate-700 hover:border-slate-400")
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
+function RangeInputs({
+  minValue,
+  maxValue,
+  minPlaceholder,
+  maxPlaceholder,
+  step,
+  min,
+  max,
+  onChange,
+}: {
+  minValue: number;
+  maxValue: number;
+  minPlaceholder: string;
+  maxPlaceholder: string;
+  step: number;
+  min?: number;
+  max?: number;
+  onChange: (min: number, max: number) => void;
+}) {
+  const inputClass =
+    "w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-slate-500 focus:ring-2 focus:ring-slate-200";
+  const lo = min ?? 0;
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        type="number"
+        inputMode="numeric"
+        min={lo}
+        max={max}
+        step={step}
+        placeholder={minPlaceholder}
+        value={minValue || ""}
+        onChange={(e) => onChange(Number(e.target.value) || 0, maxValue)}
+        className={inputClass}
+      />
+      <span aria-hidden className="text-xs text-slate-400">
+        –
+      </span>
+      <input
+        type="number"
+        inputMode="numeric"
+        min={lo}
+        max={max}
+        step={step}
+        placeholder={maxPlaceholder}
+        value={maxValue || ""}
+        onChange={(e) => onChange(minValue, Number(e.target.value) || 0)}
+        className={inputClass}
+      />
+    </div>
+  );
+}
+
 function MyBidsLink({ count }: { count: number }) {
   return (
     <Link
@@ -415,22 +825,32 @@ function MyBidsLink({ count }: { count: number }) {
 function EmptyState({
   query,
   status,
+  activeFilterCount,
   onClearQuery,
   onClearStatus,
+  onClearFilters,
 }: {
   query: string;
   status: StatusKey;
+  activeFilterCount: number;
   onClearQuery: () => void;
   onClearStatus: () => void;
+  onClearFilters: () => void;
 }) {
   const statusLabel = STATUS_OPTIONS.find((o) => o.value === status)?.label ?? "";
   const hasQuery = query.trim().length > 0;
   const hasStatus = status !== "all";
+  const hasFilters = activeFilterCount > 0;
 
   return (
     <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-12 text-center">
       <p className="text-sm text-slate-600">
-        {hasQuery && hasStatus ? (
+        {hasQuery && hasFilters ? (
+          <>
+            No vehicles match <span className="font-medium">“{query}”</span>{" "}
+            with the current filters.
+          </>
+        ) : hasQuery && hasStatus ? (
           <>
             No <span className="font-medium">{statusLabel.toLowerCase()}</span>{" "}
             vehicles match <span className="font-medium">“{query}”</span>.
@@ -439,6 +859,14 @@ function EmptyState({
           <>
             No vehicles match <span className="font-medium">“{query}”</span>.
           </>
+        ) : hasFilters && hasStatus ? (
+          <>
+            No{" "}
+            <span className="font-medium">{statusLabel.toLowerCase()}</span>{" "}
+            vehicles match the current filters.
+          </>
+        ) : hasFilters ? (
+          <>No vehicles match the current filters.</>
         ) : hasStatus ? (
           <>
             No vehicles are{" "}
@@ -449,7 +877,7 @@ function EmptyState({
           <>No vehicles available.</>
         )}
       </p>
-      <div className="mt-3 flex justify-center gap-4 text-sm">
+      <div className="mt-3 flex flex-wrap justify-center gap-4 text-sm">
         {hasQuery && (
           <button
             type="button"
@@ -457,6 +885,15 @@ function EmptyState({
             className="text-blue-600 hover:underline"
           >
             Clear search
+          </button>
+        )}
+        {hasFilters && (
+          <button
+            type="button"
+            onClick={onClearFilters}
+            className="text-blue-600 hover:underline"
+          >
+            Clear filters
           </button>
         )}
         {hasStatus && (
