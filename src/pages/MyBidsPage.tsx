@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { getEffectiveBid, useBids, type MaxBidMap, type UserBid } from "../bids";
 import { getVehicleById } from "../data";
@@ -31,6 +32,10 @@ function groupByVehicle(userBids: UserBid[]): Entry[] {
 export default function MyBidsPage() {
   const { userBids, userMaxBids } = useBids();
   const entries = groupByVehicle(userBids);
+
+  useEffect(() => {
+    document.title = "My bids — The Block";
+  }, []);
 
   return (
     <div className="min-h-screen">
