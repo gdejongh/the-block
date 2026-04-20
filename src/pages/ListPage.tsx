@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   formatDuration,
@@ -43,6 +43,12 @@ function isValidStatus(s: string): s is StatusKey {
   return STATUS_OPTIONS.some((o) => o.value === s);
 }
 
+function gradePillClasses(grade: number): string {
+  if (grade >= 4) return "bg-emerald-50 text-emerald-700";
+  if (grade >= 3) return "bg-amber-50 text-amber-700";
+  return "bg-rose-50 text-rose-700";
+}
+
 function haystack(v: Vehicle) {
   return [
     String(v.year),
@@ -55,9 +61,22 @@ function haystack(v: Vehicle) {
     v.selling_dealership,
     v.city,
     v.province,
+    v.exterior_color,
+    v.interior_color,
+    v.fuel_type,
   ]
     .join(" ")
     .toLowerCase();
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function matchesQuery(hay: string, query: string): boolean {
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return true;
+  return tokens.every((t) => new RegExp(`\\b${escapeRegex(t)}`).test(hay));
 }
 
 function displayPrice(v: Vehicle, userBids: UserBid[]): number {
@@ -114,12 +133,15 @@ export default function ListPage() {
   const statusParam = searchParams.get("status") ?? "all";
   const status: StatusKey = isValidStatus(statusParam) ? statusParam : "all";
   const { userBids, userMaxBids } = useBids();
-  const now = useNow(30_000);
+  const now = useNow(1000);
+
+  useEffect(() => {
+    document.title = "The Block — Vehicle Auctions";
+  }, []);
 
   const searched = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return vehicles;
-    return vehicles.filter((v) => haystack(v).includes(needle));
+    if (!q.trim()) return vehicles;
+    return vehicles.filter((v) => matchesQuery(haystack(v), q));
   }, [q]);
 
   const statusCounts = useMemo(() => {
@@ -224,7 +246,7 @@ export default function ListPage() {
           })}
           <span className="ml-auto text-xs text-slate-500">
             {sorted.length === vehicles.length
-              ? `${vehicles.length} vehicles live`
+              ? `${vehicles.length} vehicles available`
               : `${sorted.length} of ${vehicles.length} vehicles match`}
           </span>
         </div>
@@ -232,24 +254,45 @@ export default function ListPage() {
 
       <main className="mx-auto max-w-6xl px-4 py-6">
         {sorted.length === 0 ? (
-          <EmptyState query={q} onClear={() => updateParam("q", "", "")} />
+          <EmptyState
+            query={q}
+            status={status}
+            onClearQuery={() => updateParam("q", "", "")}
+            onClearStatus={() => updateParam("status", "all", "all")}
+          />
         ) : (
           <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {sorted.map((v) => {
               const { currentBid, bidCount, myLastBid, wonByBuyNow, maxBid } =
                 getEffectiveBid(v, userBids, userMaxBids);
               const times = getAuctionTimes(v, now);
+              const reserveMet =
+                v.reserve_price != null && currentBid >= v.reserve_price;
+              const showReservePill = times.state === "live" && reserveMet;
               return (
                 <li key={v.id}>
                   <Link
                     to={`/vehicles/${v.id}`}
                     className="flex h-full flex-col rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300 hover:shadow"
                   >
-                    <div className="flex items-baseline justify-between">
+                    <div className="flex items-baseline justify-between gap-2">
                       <h2 className="font-medium">
                         {v.year} {v.make} {v.model}
                       </h2>
-                      <span className="text-xs text-slate-500">Lot {v.lot}</span>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span
+                          className={
+                            "rounded-full px-1.5 py-0.5 text-[11px] font-medium " +
+                            gradePillClasses(v.condition_grade)
+                          }
+                          title={`Condition grade ${v.condition_grade.toFixed(1)} of 5`}
+                        >
+                          {v.condition_grade.toFixed(1)}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          Lot {v.lot}
+                        </span>
+                      </div>
                     </div>
                     <p className="text-sm text-slate-600">{v.trim}</p>
                     <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-slate-500">
@@ -287,7 +330,14 @@ export default function ListPage() {
                         </>
                       )}
                     </div>
-                    <AuctionLabel times={times} wonByBuyNow={wonByBuyNow} />
+                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <AuctionLabel times={times} wonByBuyNow={wonByBuyNow} />
+                      {showReservePill && (
+                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                          Reserve met
+                        </span>
+                      )}
+                    </div>
                     {wonByBuyNow ? (
                       <p className="mt-1 text-xs font-medium text-emerald-700">
                         You bought this
@@ -323,14 +373,14 @@ function AuctionLabel({
 }) {
   if (wonByBuyNow) {
     return (
-      <p className="mt-2 text-xs font-medium text-emerald-700">
+      <p className="text-xs font-medium text-emerald-700">
         Sold · Buy now
       </p>
     );
   }
   if (times.state === "live") {
     return (
-      <p className="mt-2 text-xs font-medium text-emerald-700">
+      <p className="text-xs font-medium text-emerald-700">
         <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 align-middle" />
         Live · Ends in {formatDuration(times.msUntilEnd)}
       </p>
@@ -338,7 +388,7 @@ function AuctionLabel({
   }
   if (times.state === "upcoming") {
     return (
-      <p className="mt-2 text-xs font-medium text-slate-600">
+      <p className="text-xs font-medium text-slate-600">
         Starts in {formatDuration(times.msUntilStart)}
       </p>
     );
@@ -362,19 +412,63 @@ function MyBidsLink({ count }: { count: number }) {
   );
 }
 
-function EmptyState({ query, onClear }: { query: string; onClear: () => void }) {
+function EmptyState({
+  query,
+  status,
+  onClearQuery,
+  onClearStatus,
+}: {
+  query: string;
+  status: StatusKey;
+  onClearQuery: () => void;
+  onClearStatus: () => void;
+}) {
+  const statusLabel = STATUS_OPTIONS.find((o) => o.value === status)?.label ?? "";
+  const hasQuery = query.trim().length > 0;
+  const hasStatus = status !== "all";
+
   return (
     <div className="rounded-lg border border-dashed border-slate-300 bg-white px-4 py-12 text-center">
       <p className="text-sm text-slate-600">
-        No vehicles match <span className="font-medium">“{query}”</span>.
+        {hasQuery && hasStatus ? (
+          <>
+            No <span className="font-medium">{statusLabel.toLowerCase()}</span>{" "}
+            vehicles match <span className="font-medium">“{query}”</span>.
+          </>
+        ) : hasQuery ? (
+          <>
+            No vehicles match <span className="font-medium">“{query}”</span>.
+          </>
+        ) : hasStatus ? (
+          <>
+            No vehicles are{" "}
+            <span className="font-medium">{statusLabel.toLowerCase()}</span>{" "}
+            right now.
+          </>
+        ) : (
+          <>No vehicles available.</>
+        )}
       </p>
-      <button
-        type="button"
-        onClick={onClear}
-        className="mt-3 text-sm text-blue-600 hover:underline"
-      >
-        Clear search
-      </button>
+      <div className="mt-3 flex justify-center gap-4 text-sm">
+        {hasQuery && (
+          <button
+            type="button"
+            onClick={onClearQuery}
+            className="text-blue-600 hover:underline"
+          >
+            Clear search
+          </button>
+        )}
+        {hasStatus && (
+          <button
+            type="button"
+            onClick={onClearStatus}
+            className="text-blue-600 hover:underline"
+          >
+            Show all statuses
+          </button>
+        )}
+      </div>
     </div>
   );
 }
