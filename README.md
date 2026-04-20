@@ -51,6 +51,16 @@ A three-page buyer flow - list, detail, my bids - with a shared header and a `:i
 
 **Bidding.** Placed bids persist in `localStorage` under `the-block:bids`; max-bid ceilings under `the-block:max-bids`. Effective auction state - current bid, bid count, your last bid, top-bidder status - is derived by layering user bids over the JSON seed via a pure `getEffectiveBid` helper, so the list card, detail panel, my-bids row, and header badges all stay in sync automatically.
 
+## Out of Scope
+
+Deliberately not built, to keep scope tight within the time budget:
+
+- **Authentication and user accounts** - the prompt said these aren't required, and adding them would have displaced buyer-flow work.
+- **Seller workflows, dealer admin, checkout, payments** - explicitly excluded by the prompt.
+- **Real backend.** Bids live in `localStorage`, so they don't persist across devices or users. The swap point is isolated to `src/data.ts` + the bids context.
+- **Multi-user bidding simulation.** Without opposing bidders the max-bid ceiling is stored but never fires - the proxy has nothing to react to.
+- **Currency toggle.** A USD/CAD switch without real FX rates would mislead buyers more than the CAD-only default does.
+
 ## Notable Decisions
 
 **Frontend-only, no backend.** The prompt explicitly allows it, and the core loop (browse → detail → bid) is fully demonstrable client-side. A backend would have eaten hours that paid off more in craft. Trade-off: bids don't persist across devices, and there's no "live" multi-bidder simulation. If this went further, the swap point is a single file (`src/data.ts` + the bids context).
@@ -79,6 +89,10 @@ A three-page buyer flow - list, detail, my bids - with a shared header and a `:i
 - **Lightbox + keyboard navigation** on the gallery.
 - **Accessibility pass** - focus trap + Escape-to-close on the filter panel, ARIA `live` region on the bid confirmation, contrast audit on the thinnest text.
 - **Component-level tests** for the filter/sort pipeline and auction state machine, plus a Playwright smoke test covering the browse → bid → confirm loop.
+
+## AI Tooling
+
+Built with Claude Code as a pair-programming partner. I drove the architecture, scope, and product decisions - it was used for boilerplate scaffolding, targeted refactors, and pressure-testing edge cases. Every commit reflects code I read and understood.
 
 ## Time Spent
 
