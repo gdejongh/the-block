@@ -49,7 +49,11 @@ export default function DetailPage() {
       <main className="mx-auto max-w-6xl px-4 py-6">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <section className="lg:col-span-2 lg:row-start-1">
-            <Gallery images={vehicle.images} alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`} />
+            <Gallery
+              key={vehicle.id}
+              images={vehicle.images}
+              alt={`${vehicle.year} ${vehicle.make} ${vehicle.model}`}
+            />
 
             <div className="mt-6">
               <h1 className="text-2xl font-semibold tracking-tight">
@@ -63,7 +67,7 @@ export default function DetailPage() {
           </section>
 
           <aside className="lg:col-start-3 lg:row-span-2 lg:row-start-1">
-            <AuctionPanel vehicle={vehicle} />
+            <AuctionPanel key={vehicle.id} vehicle={vehicle} />
           </aside>
 
           <section className="lg:col-span-2 lg:row-start-2">
@@ -233,7 +237,7 @@ function AuctionPanel({ vehicle }: { vehicle: Vehicle }) {
     } else {
       // Proxy bid: record the ceiling, place the minimum needed to be top.
       // If already top, just record the max without an extra bid.
-      const placeAt = isTopBidder ? undefined : Math.min(amount, minNextBid);
+      const placeAt = isTopBidder ? undefined : minNextBid;
       setMaxBid(vehicle.id, amount, placeAt);
     }
     setDraft("");
