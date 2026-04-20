@@ -34,15 +34,22 @@ Other scripts:
 
 ## What I Built
 
-A two-page buyer flow with a shared header and a `:id`-based route for individual vehicles.
+A three-page buyer flow — list, detail, my bids — with a shared header and a `:id`-based route for individual vehicles.
 
-**List page (`/`).** Responsive grid of all 200 vehicles with case-insensitive text search across year, make, model, trim, body style, VIN, lot, dealership, city, and province. Search is URL-synced via `?q=…` so filtered views are shareable (history uses `replace`, so typing doesn't pollute back-button state). Each card shows the live current bid and bid count; lots with no bids show "Starting $X · No bids yet" instead of a confusing "$0 · 0 bids". If you've placed a bid, the card is annotated "You bid $X".
+**List page (`/`).** Responsive grid of all 200 vehicles with a photo, condition-grade pill, color swatch, and the live current bid on each card. Cards are split visually: vehicle details on top, price / auction state / your-bid annotation on the bottom edge (so equal-height rows read consistently). Lots with no bids show "Starting $X · No bids yet" instead of "$0 · 0 bids".
 
-**Detail page (`/vehicles/:id`).** Gallery (hero + thumbnails), title block with location and selling dealership, a specs table, a condition section with grade + report + damage notes, and an auction panel with opening/current bid, bids count, reserve-met status, and a bid form. Min increment is $100. Invalid bids show an inline error. Your last bid is confirmed below the form with its timestamp.
+- **Search** is case-insensitive with word-boundary matching across year, make, model, trim, body style, VIN, lot, dealership, city, province, exterior/interior color, and fuel type. URL-synced via `?q=…`.
+- **Status chips** (All / Live / Starting soon / Ended) filter by auction state, with live counts that recompute against the current filter set.
+- **Sort** by lot order, name, price (effective current bid), mileage, year, or auction time.
+- **Filter panel** (toggled from the header) gives multi-select make / body / color chips, a condition-grade threshold, and range inputs for price and year. All filter state round-trips through the URL, so a filtered view is shareable and survives reload. Inverted ranges (e.g. min $10k, max $5k) are normalized at compare time so typed values stay where you put them.
 
-**Auction state + countdowns.** Each vehicle is labelled `upcoming` / `live` / `ended` with a ticking countdown — "Starts in 2d 2h" or "Live · Ends in 1d 19h". On the detail page the bid form is disabled outside the live window. Because the JSON timestamps are synthetic, `src/auction.ts` shifts every auction by a single delta so the dataset's median start lands at page-load time, guaranteeing a spread of states for any reviewer at any point in time.
+**Detail page (`/vehicles/:id`).** Gallery with clickable thumbnails, title block with location and selling dealership, a specs table, and a condition section with grade + report + damage notes. The auction panel lives as a mobile-first sibling and a desktop sticky sidebar (see below). Inside the panel: opening/current bid, bids count, three-state reserve copy ("No reserve" / "Reserve met" / "Reserve not yet met"), a tabbed bid form (Bid now / Max bid), and a Buy-now button when the listing supports one. Min increment is $100; invalid bids show an inline error; the form disables outside the live window.
 
-**Bidding.** Placed bids persist in `localStorage` under the key `the-block:bids`. Effective auction state — current bid, bid count, your last bid — is derived by layering user bids over the JSON seed values via a pure `getEffectiveBid` function, so the list card, detail panel, and header badges all stay in sync automatically.
+**My bids (`/my-bids`).** Per-vehicle rollup of every bid you've placed, sorted by most recent. Each row resolves to one of five outcomes given the live auction state: **Bought**, **Won**, **High bidder**, **Outbid**, or **Auction ended** — so returning users can tell at a glance what happened while they were away.
+
+**Auction state + countdowns.** Each vehicle is labelled `upcoming` / `live` / `ended` with a ticking countdown — "Starts in 2d 2h" or "Live · Ends in 1d 19h". Because the JSON timestamps are synthetic, `src/auction.ts` shifts every auction by a single delta so the dataset's median start lands at page-load time, guaranteeing a spread of states for any reviewer at any point in time.
+
+**Bidding.** Placed bids persist in `localStorage` under `the-block:bids`; max-bid ceilings under `the-block:max-bids`. Effective auction state — current bid, bid count, your last bid, top-bidder status — is derived by layering user bids over the JSON seed via a pure `getEffectiveBid` helper, so the list card, detail panel, my-bids row, and header badges all stay in sync automatically.
 
 ## Notable Decisions
 
@@ -59,18 +66,20 @@ A two-page buyer flow with a shared header and a `:id`-based route for individua
 ## Testing
 
 - `npm run typecheck` passes with strict TypeScript settings.
+- `npm test` runs Vitest coverage for `getEffectiveBid` (seed-only, user-above-seed, below-seed, multi-bid ordering, buy-now terminal state, cross-vehicle isolation, max-bid map, null `current_bid`).
 - Responsive layout verified with headless Chromium screenshots at 375×667 (mobile), 768×1024 (tablet), and 1280×800 (desktop). The `playwright` devDep was used as an inspection tool during development — it isn't wired into CI and can be removed without affecting the app.
-- Manually exercised the bid flow: valid bids, below-minimum rejection, non-numeric input, reload persistence, and effective state propagating back from the detail page to the list cards.
+- Manually exercised the bid flow: valid bids, below-minimum rejection, non-numeric input, max-bid ceiling, buy-now terminal state, reload persistence, and effective state propagating back from the detail page to the list cards and my-bids rollup.
 
 ## What I'd Do With More Time
 
-- **Filter chips** for make, body style, and province, living next to the search input with the same URL-sync pattern.
+- **Simulated competing bidders** so the max-bid mechanic can actually fire — today the UI accepts a ceiling and places the minimum, but with no opposing bids the proxy never raises. A simple ticker that nibbles at live auctions would make the feature demonstrable.
+- **Runtime schema validation** on `data/vehicles.json` and `localStorage` reads (Zod or a hand-rolled guard) — currently both paths trust the cast.
+- **Error boundary + image-load fallback** so one bad CDN request or thrown render doesn't blank the page.
 - **Sticky mobile bid bar** on the detail page — a condensed "Current $X · Bid" bar pinned to the bottom, so the action stays within thumb reach while scrolling specs.
 - **Lightbox + keyboard navigation** on the gallery.
-- **Unit tests for `getEffectiveBid`** — the most logic-heavy pure function in the app.
-- **Accessibility pass** — focus rings audit, ARIA `live` on the bid confirmation, contrast check on the emerald "you bid" text.
-- **Bid history view** — per-vehicle log and a user-wide "Your activity" page, both of which are trivially addable given the shape of what's already in `localStorage`.
+- **Accessibility pass** — focus trap + Escape-to-close on the filter panel, ARIA `live` region on the bid confirmation, contrast audit on the thinnest text.
+- **Component-level tests** for the filter/sort pipeline and auction state machine, plus a Playwright smoke test covering the browse → bid → confirm loop.
 
 ## Time Spent
 
-_Placeholder — fill in before submitting._
+Roughly 4–5 hours end to end.
